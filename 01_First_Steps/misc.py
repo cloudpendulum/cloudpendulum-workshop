@@ -4,11 +4,21 @@ from pathlib import Path
 import os
 import time
 
-def download_video(video_url):
+def download_video(video_url, max_attempts=10, retry_delay=1.0):
     time.sleep(2.0)
     os.makedirs("videos", exist_ok=True)
-    input_path = wget.download(video_url, out="videos/")
-    
+
+    # The server may still be finalizing the recording right after the experiment
+    # stops, in which case the download is empty. Retry until we get actual data.
+    for attempt in range(max_attempts):
+        input_path = wget.download(video_url, out="videos/")
+        if os.path.getsize(input_path) > 0:
+            break
+        os.remove(input_path) # so that wget reuses the same file name next time
+        time.sleep(retry_delay)
+    else:
+        raise RuntimeError(f"Downloaded video is still empty after {max_attempts} attempts: {video_url}")
+
     output_path = Path(input_path).parent / (str(Path(input_path).stem) + '.mp4')
     convert_flv_to_mp4(input_path, output_path)
     return output_path

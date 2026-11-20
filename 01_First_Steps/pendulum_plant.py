@@ -6,8 +6,6 @@ try:
     from pycloudpendulum import Client
 except:
     from cloud_pendulum_local import Client
-import wget
-import subprocess
 import os
 import ast
 import time
@@ -252,12 +250,12 @@ class PendulumPlant:
         session_token, livestream_url = client.start_experiment(
             user_token = user_token,
             experiment_type = "SimplePendulum",
-            experiment_time = 5.0,
+            experiment_time = tf,
             preparation_time = 5.0,
             initial_position = [x0],
             record = True
         )
-        client.set_impedance_controller_params(0,0, session_token)
+        client.set_impedance_controller_params([0.0], [0.0], session_token)
         meas_time = 0.0
         meas_dt = 0.0
         n = int(tf / dt)
@@ -273,16 +271,17 @@ class PendulumPlant:
             meas_time += meas_dt
         
             # Measure data
-            measured_position = client.get_position(session_token) # Measure position
-            measured_velocity = client.get_velocity(session_token) # Measure velocity
-            measured_torque = client.get_torque(session_token) # Measure torque
+            # the client returns one value per joint; this plant has a single joint
+            measured_position = client.get_position(session_token)[0] # Measure position
+            measured_velocity = client.get_velocity(session_token)[0] # Measure velocity
+            measured_torque = client.get_torque(session_token)[0] # Measure torque
 
             # controller
             if controller is None:
                 tau = 0.0
             else:
                 tau = controller.get_control_output(np.array([measured_position, measured_velocity]))
-                client.set_torque(tau, session_token)
+                client.set_torque([tau], session_token)
             
             # add data to matrices
             self.t_values[i] = meas_time
@@ -315,26 +314,6 @@ class PendulumPlant:
         time.sleep(time_to_pass * 0.7) # sleep
         while time.time() - start_loop < dt: # busy waiting
             pass
-        
-    def convert_flv_to_mp4(self, input_path, output_path):
-        """
-        Convert an FLV file to MP4 using FFmpeg.
-    
-        :param input_path: Path to the input FLV file.
-        :param output_path: Path to the output MP4 file.
-        """
-        command = [
-            "ffmpeg",
-            "-i", input_path,    # Input file
-            "-c:v", "copy",      # Copy video stream
-            "-c:a", "copy",      # Copy audio stream
-            output_path          # Output file
-        ]
-        process = subprocess.run(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-        if process.returncode == 0:
-            print(f"Conversion successful: {output_path}")
-        else:
-            print(f"Error during conversion: {process.stderr.decode()}")
 
 def plot_timeseries(T, X, U):
     plt.plot(T, np.asarray(X).T[0], label=r"$\theta$")
