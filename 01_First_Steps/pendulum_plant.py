@@ -2,7 +2,10 @@ import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.animation import FuncAnimation
 import matplotlib.animation as mplanimation
-from cloudpendulumclient.client import Client
+try:
+    from pycloudpendulum import Client
+except:
+    from cloud_pendulum_local import Client
 import wget
 import subprocess
 import os
@@ -151,7 +154,7 @@ class PendulumPlant:
         
         #fig = plt.figure(figsize=(6,6))
         #self.animation_ax = plt.axes()
-        fig, (self.animation_ax, self.ps_ax) = plt.subplots(1, 2, figsize=(10, 5));
+        fig, (self.animation_ax, self.ps_ax) = plt.subplots(1, 2, figsize=(10, 5), layout="constrained");
         self.animation_plots = []
         ee_plot, = self.animation_ax.plot([], [], "o", markersize=25.0, color="blue")
         bar_plot, = self.animation_ax.plot([], [], "-", lw=5, color="black")
@@ -251,7 +254,7 @@ class PendulumPlant:
             experiment_type = "SimplePendulum",
             experiment_time = 5.0,
             preparation_time = 5.0,
-            initial_state = [x0],
+            initial_position = [x0],
             record = True
         )
         client.set_impedance_controller_params(0,0, session_token)
@@ -334,9 +337,9 @@ class PendulumPlant:
             print(f"Error during conversion: {process.stderr.decode()}")
 
 def plot_timeseries(T, X, U):
-    plt.plot(T, np.asarray(X).T[0], label="theta")
-    plt.plot(T, np.asarray(X).T[1], label="theta dot")
-    plt.plot(T, U, label="u")
+    plt.plot(T, np.asarray(X).T[0], label=r"$\theta$")
+    plt.plot(T, np.asarray(X).T[1], label=r"$\dot{\theta}$")
+    plt.plot(T, U, label=r"$u$")
     plt.legend(loc="best")
     plt.show()
 
