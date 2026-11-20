@@ -2,8 +2,10 @@ import subprocess
 import wget
 from pathlib import Path
 import os
+import time
 
 def download_video(video_url):
+    time.sleep(2.0)
     os.makedirs("videos", exist_ok=True)
     input_path = wget.download(video_url, out="videos/")
     
@@ -18,6 +20,8 @@ def convert_flv_to_mp4(input_path, output_path):
     :param input_path: Path to the input FLV file.
     :param output_path: Path to the output MP4 file.
     """
+    time.sleep(2.0)
+
     command = [
         "ffmpeg",
         "-i", input_path,    # Input file
