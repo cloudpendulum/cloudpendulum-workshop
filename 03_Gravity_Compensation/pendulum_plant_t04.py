@@ -2,9 +2,10 @@ import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.animation import FuncAnimation
 import matplotlib.animation as mplanimation
-from cloudpendulumclient.client import Client
-import wget
-import subprocess
+try:
+    from pycloudpendulum import Client
+except:
+    from cloud_pendulum_local import Client
 import os
 import ast
 import time
@@ -178,33 +179,17 @@ class PendulumPlant:
         self.animation_plots[-1].set_data(np.asarray(self.x_values).T[0], np.asarray(self.x_values).T[1])
         return self.animation_plots
 
-    def activate_hardware(self):
-        """
-        Activate the pendulum hardware
-        """    
-        import pyCandle
-
-        # Create CANdle object and set FDCAN baudrate to 1Mbps
-        self.candle = pyCandle.Candle(pyCandle.CAN_BAUD_8M,True)
-
-        # Ping FDCAN bus in search of drives
-        ids = self.candle.ping()
-
-        # Add all found to the update list
-        for id in ids:
-            self.candle.addMd80(id)
-
     def run_on_hardware_cloud(self, user_token, x0, tf, dt, controller=None, save_video = True):
         client = Client()
         session_token, livestream_url = client.start_experiment(
             user_token = user_token,
             experiment_type = "SimplePendulum",
-            experiment_time = 5.0,
+            experiment_time = tf,
             preparation_time = 5.0,
             initial_position = [x0],
             record = True
         )
-        client.set_impedance_controller_params(0,0, session_token)
+        client.set_impedance_controller_params([0.0], [0.0], session_token)
         meas_time = 0.0
         meas_dt = 0.0
         n = int(tf / dt)
@@ -220,16 +205,17 @@ class PendulumPlant:
             meas_time += meas_dt
         
             # Measure data
-            measured_position = client.get_position(session_token) # Measure position
-            measured_velocity = client.get_velocity(session_token) # Measure velocity
-            measured_torque = client.get_torque(session_token) # Measure torque
+            # the client returns one value per joint; this plant has a single joint
+            measured_position = client.get_position(session_token)[0] # Measure position
+            measured_velocity = client.get_velocity(session_token)[0] # Measure velocity
+            measured_torque = client.get_torque(session_token)[0] # Measure torque
 
             # controller
             if controller is None:
                 tau = 0.0
             else:
                 tau = controller.get_control_output(np.array([measured_position, measured_velocity]))
-                client.set_torque(tau, session_token)
+                client.set_torque([tau], session_token)
             
             # add data to matrices
             self.t_values[i] = meas_time
@@ -262,128 +248,6 @@ class PendulumPlant:
         time.sleep(time_to_pass * 0.7) # sleep
         while time.time() - start_loop < dt: # busy waiting
             pass
-        
-    def convert_flv_to_mp4(self, input_path, output_path):
-        """
-        Convert an FLV file to MP4 using FFmpeg.
-    
-        :param input_path: Path to the input FLV file.
-        :param output_path: Path to the output MP4 file.
-        """
-        command = [
-            "ffmpeg",
-            "-i", input_path,    # Input file
-            "-c:v", "copy",      # Copy video stream
-            "-c:a", "copy",      # Copy audio stream
-            output_path          # Output file
-        ]
-        process = subprocess.run(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-        if process.returncode == 0:
-            print(f"Conversion successful: {output_path}")
-        else:
-            print(f"Error during conversion: {process.stderr.decode()}")
-
-
-    def run_on_hardware_phys(self, tf, dt, controller=None):
-        
-        import pyCandle
-        import time
-
-        # Select pendulum from motor list
-        
-        # Now we shall loop over all found drives to change control mode and enable them one by one
-        for md in self.candle.md80s:
-            self.candle.controlMd80SetEncoderZero(md)      #  Reset encoder at current position
-            self.candle.controlMd80Mode(md, pyCandle.IMPEDANCE)    # Set mode to impedance control
-            self.candle.controlMd80Enable(md, True)     # Enable the drive
-
-        # Begin update loop (it starts in the background)
-        self.candle.begin()
-
-        candle_dict = {}
-        motornum = 0
-        for motor in self.candle.md80s:
-            candle_dict[self.candle.md80s[motornum].getId()] = motornum
-            motornum += 1
-
-        md80id = 899
-        
-        md80num = candle_dict[md80id]
-        
-        # set zero impedance (kp=kd=0) for pure torque control 
-        self.candle.md80s[md80num].setImpedanceControllerParams(0, 0)
-        
-        input("Press bring the pendulum to the starting configuration and press enter to continue...")
-    
-        tau_scaling = 1.0
-
-        n = int(tf / dt)
-
-        meas_time_vec = np.zeros(n)
-        meas_pos = np.zeros(n)
-        meas_vel = np.zeros(n)
-        meas_tau = np.zeros(n)
-        des_tau = np.zeros(n)
-
-        # defining runtime variables
-        i = 0
-        meas_dt = 0.0
-        meas_time = 0.0
-
-        print("Control Loop Started!")
-        # Auto update loop is running in the background updating data in candle.md80s vector. Each md80 object can be 
-        # Called for data at any time
-        while i < n:
-            start_loop = time.time()
-            meas_time += meas_dt
-            
-            ## Do your stuff here - START
-            
-            measured_position = self.candle.md80s[md80num].getPosition()
-            measured_velocity = self.candle.md80s[md80num].getVelocity()  
-            measured_torque = self.candle.md80s[md80num].getTorque()             
-            self.x = np.array([measured_position, measured_velocity])
-            
-            # Control logic
-            if controller is not None:
-                tau = controller.get_control_output(self.x)
-                tau_scaled = tau*tau_scaling    # physical torque to motor torque
-                self.candle.md80s[md80num].setTargetTorque(tau_scaled)
-            else:
-                tau = 0                
-                       
-            # Collect data for plotting
-            meas_time_vec[i] = meas_time
-            meas_pos[i] = measured_position
-            meas_vel[i] = measured_velocity    
-            meas_tau[i] = self.candle.md80s[md80num].getTorque()/tau_scaling
-            des_tau[i] = tau 
-                
-            ## Do your stuff here - END
-            
-            i += 1
-            exec_time = time.time() - start_loop
-            if exec_time > dt:
-                print("Control loop is too slow!")
-                print("Control frequency:", 1/exec_time, "Hz")
-                print("Desired frequency:", 1/dt, "Hz")
-                print()
-            while time.time() - start_loop < dt:
-                pass
-            meas_dt = time.time() - start_loop
-        print("Control Loop Ended!")
-
-        # Send a few zeros to the motor and then close the update loop
-        for i in range(5):
-            self.candle.md80s[md80num].setTargetTorque(0.0)
-        self.candle.end()
-        
-        self.t_values = meas_time_vec
-        self.x_values = np.vstack((meas_pos, meas_vel)).T
-        self.tau_values = meas_tau
-        self.des_tau_values = des_tau
-        
-        return self.t_values, self.x_values, self.tau_values, self.des_tau_values
 
     def plot_energy(self):
         t = self.t_values
