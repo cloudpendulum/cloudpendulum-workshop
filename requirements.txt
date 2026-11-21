@@ -1,0 +1,16 @@
+cma
+ipykernel
+ipython
+jax
+jupyter
+jupyterlab
+matplotlib
+mpmath
+numpy
+pandas
+pyCandleMAB==1.6.2
+PyYAML
+scikit-learn
+scipy
+sympy
+wget

@@ -1,4 +1,4 @@
-When using con the cloud:
+When using on the cloud:
 
 1. Clone this repo
 2. You're ready to go!
@@ -11,6 +11,7 @@ When using locally:
 ```
 pip install -r requirements.txt
 ```
+This should install all direct dependencies and choose indirect ones freely. If you experience problems regarding dependencies, use `pip install -r requirements_strict.py` instead.
 4. Register the Jupyter kernel and add to VS Code
 ```
 python3 -m pip install ipykernel
