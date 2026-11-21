@@ -3,3 +3,4 @@ notes.md
 .ipynb_checkpoints/
 **.csv
 **/videos/
+gym_worker.py
