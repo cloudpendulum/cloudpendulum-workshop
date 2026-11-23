@@ -2,4 +2,5 @@ notes.md
 **/__pycache__/
 .ipynb_checkpoints/
 **/videos/
+**.csv
 gym_worker.py
