@@ -1,6 +1,5 @@
 notes.md
 **/__pycache__/
 .ipynb_checkpoints/
-**.csv
 **/videos/
 gym_worker.py
