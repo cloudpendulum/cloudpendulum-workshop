@@ -2,16 +2,15 @@ import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.animation import FuncAnimation
 import matplotlib.animation as mplanimation
-import wget
-import subprocess
+try:
+    from pycloudpendulum import Client
+except:
+    from cloud_pendulum_local import Client
+import os
 import ast
 import time
-from part2.misc import download_video
-try:
-    from cloudpendulumclient.client import Client
-    import cloudpendulumclient.data as Data
-except:
-    print("Warning: Did not find the CloudPendulum Client. Please run on the CloudPendulum to run on the real hardware.")
+from misc import download_video
+from IPython.display import Video
 
 class PendulumPlant:
     def __init__(self, mass=1.0, length=0.5, damping=0.1, gravity=9.81, inertia=None, torque_limit=np.inf):
@@ -58,7 +57,7 @@ class PendulumPlant:
         accn = (torque - self.m*self.g*self.l*np.sin(pos) - self.b*vel) / self.I
 
         #print(torque)
-        
+
         return accn
 
     def inverse_dynamics(self, pos, vel, accn):
@@ -142,7 +141,7 @@ class PendulumPlant:
 
         #fig = plt.figure(figsize=(6,6))
         #self.animation_ax = plt.axes()
-        fig, (self.animation_ax, self.ps_ax) = plt.subplots(1, 2, figsize=(10, 5))
+        fig, (self.animation_ax, self.ps_ax) = plt.subplots(1, 2, figsize=(10, 5), layout="constrained")
         self.animation_plots = []
         ee_plot, = self.animation_ax.plot([], [], "o", markersize=25.0, color="blue")
         bar_plot, = self.animation_ax.plot([], [], "-", lw=5, color="black")
@@ -235,190 +234,56 @@ class PendulumPlant:
         self.animation_plots[-1].set_data(np.asarray(self.x_values).T[0], np.asarray(self.x_values).T[1])
         return self.animation_plots
 
-    def activate_hardware(self):
-        """
-        Activate the pendulum hardware
-        """    
-        import pyCandle
-
-        # Create CANdle object and set FDCAN baudrate to 1Mbps
-        self.candle = pyCandle.Candle(pyCandle.CAN_BAUD_1M,True)
-
-        # Ping FDCAN bus in search of drives
-        ids = self.candle.ping()
-
-        # Add all found to the update list
-        for id in ids:
-            self.candle.addMd80(id)
-
-    def CubicTimeScaling(self, Tf, t):
-        """Computes s(t) for a cubic time scaling
-        Source: Modern Robotics Toolbox (https://github.com/NxRLab/ModernRobotics/blob/master/packages/Python/modern_robotics/core.py#L1455C1-L1469C61)
-        :param Tf: Total time of the motion in seconds from rest to rest
-        :param t: The current time t satisfying 0 < t < Tf
-        :return: The path parameter s(t) corresponding to a third-order
-                 polynomial motion that begins and ends at zero velocity
-    
-        Example Input:
-            Tf = 2
-            t = 0.6
-        Output:
-            0.216
-        """
-        return 3 * (1.0 * t / Tf) ** 2 - 2 * (1.0 * t / Tf) ** 3
-
-    def JointTrajectory(self, thetastart, thetaend, Tf, N):
-        """Computes a straight-line trajectory in joint space
-        Source: Modern Robotics Toolbox (modified) 
-        :param thetastart: The initial joint variables
-        :param thetaend: The final joint variables
-        :param Tf: Total time of the motion in seconds from rest to rest
-        :param N: The number of points N > 1 (Start and stop) in the discrete
-                  representation of the trajectory
-        :return: A trajectory as an N x n matrix, where each row is an n-vector
-                 of joint variables at an instant in time. The first row is
-                 thetastart and the Nth row is thetaend . The elapsed time
-                 between each row is Tf / (N - 1)
-    
-        Example Input:
-            thetastart = np.array([1, 0, 0, 1, 1, 0.2, 0,1])
-            thetaend = np.array([1.2, 0.5, 0.6, 1.1, 2, 2, 0.9, 1])
-            Tf = 4
-            N = 6
-            method = 3
-        Output:
-            np.array([[     1,     0,      0,      1,     1,    0.2,      0, 1]
-                      [1.0208, 0.052, 0.0624, 1.0104, 1.104, 0.3872, 0.0936, 1]
-                      [1.0704, 0.176, 0.2112, 1.0352, 1.352, 0.8336, 0.3168, 1]
-                      [1.1296, 0.324, 0.3888, 1.0648, 1.648, 1.3664, 0.5832, 1]
-                      [1.1792, 0.448, 0.5376, 1.0896, 1.896, 1.8128, 0.8064, 1]
-                      [   1.2,   0.5,    0.6,    1.1,     2,      2,    0.9, 1]])
-        """
-        N = int(N)
-        timegap = Tf / (N - 1.0)
-        traj = np.zeros((len(thetastart), N))
-        for i in range(N):
-            s = self.CubicTimeScaling(Tf, timegap * i)
-            traj[:, i] = s * np.array(thetaend) + (1 - s) * np.array(thetastart)
-        traj = np.array(traj).T
-        return traj
-
-    def return_home(self, startconfig = None):
-        
-        if startconfig is None:            
-            startconfig = self.c.get_position(self.cell_id)
-            
-        endconfig = 0.0
-        thetadot_max = 10.0 # max. speed limit (rad/s)
-        
-        #Tf = 20.0 # either choose a fixed trajectory time in seconds
-        Tf = 3.0*np.abs((endconfig - startconfig))/(thetadot_max) # OR calculate Tf such that speed limit is repsected.
-        
-        thetastart = np.array([startconfig])
-        thetaend = np.array([endconfig])
-
-        N = 1000 # Number of points in trajectory
-        traj = self.JointTrajectory(thetastart, thetaend, Tf, N)
-        
-        # defining runtime variables
-        i = 0
-        meas_dt = 0.0
+    def run_on_hardware_cloud(self, user_token, x0, tf, dt, controller=None, save_video = True):
+        client = Client()
+        session_token, livestream_url = client.start_experiment(
+            user_token = user_token,
+            experiment_type = "SimplePendulum",
+            experiment_time = tf,
+            preparation_time = 5.0,
+            initial_position = [x0],
+            record = True
+        )
+        client.set_impedance_controller_params([0.0], [0.0], session_token)
         meas_time = 0.0
-        dt = Tf/N
-        
-        print("Rezeroing motion started from start configuration = ", startconfig, " rad.")
-        while i < N:
+        meas_dt = 0.0
+        n = int(tf / dt)
+        i = 0
+        self.t_values = np.zeros(n)
+        self.x_values = np.zeros((2,n))
+        self.tau_values = np.zeros(n)
+        self.des_tau_values = np.zeros(n)
+        meas_dt_vec = np.zeros(n)
+
+        while meas_time < tf and i < n:
             start_loop = time.time()
             meas_time += meas_dt
-            
-            ## Do your stuff here - START  
-            pos = traj[i,:]
-            self.c.set_position(pos[0], self.cell_id)
-            ## Do your stuff here - END
-            
-            i += 1
-            exec_time = time.time() - start_loop
-            #if exec_time > dt:
-                #print("Control loop is too slow!")
-                #print("Control frequency:", 1/exec_time, "Hz")
-                #print("Desired frequency:", 1/dt, "Hz")
-                #print()
-            while time.time() - start_loop < dt:
-                pass
+
+            # Measure data
+            # the client returns one value per joint; this plant has a single joint
+            measured_position = client.get_position(session_token)[0] # Measure position
+            measured_velocity = client.get_velocity(session_token)[0] # Measure velocity
+            measured_torque = client.get_torque(session_token)[0] # Measure torque
+
+            # controller
+            if controller is None:
+                tau = 0.0
+            else:
+                tau = controller.get_control_output(np.array([measured_position, measured_velocity]))
+                client.set_torque([tau], session_token)
+
+            # add data to matrices
+            self.t_values[i] = meas_time
+            self.x_values[:,i] = np.array([measured_position, measured_velocity])
+            self.tau_values[i] = measured_torque
+            self.des_tau_values[i] = tau
+
+            self.wait_for_control_loop_end(start_loop, dt)
+
             meas_dt = time.time() - start_loop
-        print("Rezeroing motion finished at end configuration = ", self.c.get_position(self.cell_id), " rad.")
+            meas_dt_vec[i] = meas_dt
 
-
-    def convert_flv_to_mp4(self, input_path, output_path):
-        """
-        Convert an FLV file to MP4 using FFmpeg.
-    
-        :param input_path: Path to the input FLV file.
-        :param output_path: Path to the output MP4 file.
-        """
-        command = [
-            "ffmpeg",
-            "-i", input_path,    # Input file
-            "-c:v", "copy",      # Copy video stream
-            "-c:a", "copy",      # Copy audio stream
-            output_path          # Output file
-        ]
-        process = subprocess.run(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-        if process.returncode == 0:
-            print(f"Conversion successful: {output_path}")
-        else:
-            print(f"Error during conversion: {process.stderr.decode()}")
-
-    def wait_for_control_loop_end(self, time_to_pass):
-            """Delay ending a while loop so that it loops at a desired sampling time dt."""
-            if time_to_pass <= 0.0:
-                return
-
-            start = time.time()
-            
-            time.sleep(time_to_pass * 0.7) # sleep
-            while time.time() - start < time_to_pass: # busy waiting
-                pass
-
-    def run_on_hardware(self, user_token, tf, dt, controller=None, save_video=True):
-        client = Client()
-
-        experiment_time = tf
-        preparation_time = 1.0
-        n = int(experiment_time / dt)
-
-        session_token, url = client.start_experiment(user_token, "SimplePendulum", experiment_time+1, preparation_time, record=False)
-
-        # Set Kp, Kd to zero for torque control
-        kp = 0.0
-        kd = 0.0
-        client.set_impedance_controller_params([kp], [kd], session_token)
-
-        meas_time_vec = np.zeros(n)
-        meas_x = np.zeros((n, 2))
-        meas_u = np.zeros((n, 1))
-        des_u = np.zeros((n, 1))
-
-        i = 0
-        t_start = time.time()
-
-        while i < n:
-            meas_time_vec[i] = time.time() - t_start
-
-            # Measure and record data
-            meas_x[i] = np.array( client.get_position(session_token) + client.get_velocity(session_token))
-            meas_u[i] = client.get_torque(session_token)
-
-            tau = 0
-            if controller is not None:
-                tau = controller.get_control_output(self.x)
-            client.set_torque(tau, session_token)
-
-            des_u[i] = tau
-
-            i += 1
-            sleep_duration = t_start + i * dt - time.time()
-            self.wait_for_control_loop_end(sleep_duration)
+            i = i + 1
 
         video_url = client.stop_experiment(session_token)
 
@@ -427,110 +292,17 @@ class PendulumPlant:
         else:
             video_path = ""
 
-        return meas_time_vec, meas_x, meas_u, des_u, video_url, video_path
+        return self.t_values[:i], self.x_values[:,:i].T, self.tau_values[:i], self.des_tau_values[:i], video_url, video_path
 
-    def run_on_hardware_phys(self, tf, dt, controller=None):
-        
-        import pyCandle
-        import zerorpc
-        import time
+    def wait_for_control_loop_end(self, start_loop, dt):
+        """Delay ending a while loop so that it loops at a desired sampling time dt."""
+        time_to_pass = start_loop + dt - time.time()
+        if time_to_pass <= 0.0:
+            return
 
-        # Select pendulum from motor list
-        
-        # Now we shall loop over all found drives to change control mode and enable them one by one
-        for md in self.candle.md80s:
-            self.candle.controlMd80SetEncoderZero(md)      #  Reset encoder at current position
-            self.candle.controlMd80Mode(md, pyCandle.IMPEDANCE)    # Set mode to impedance control
-            self.candle.controlMd80Enable(md, True)     # Enable the drive
-
-        # Begin update loop (it starts in the background)
-        self.candle.begin()
-
-        candle_dict = {}
-        motornum = 0
-        for motor in self.candle.md80s:
-            candle_dict[self.candle.md80s[motornum].getId()] = motornum
-            motornum += 1
-
-        md80id = 899
-        
-        md80num = candle_dict[md80id]
-        
-        # set zero impedance (kp=kd=0) for pure torque control 
-        self.candle.md80s[md80num].setImpedanceControllerParams(0, 0)
-        
-        input("Press bring the pendulum to the starting configuration and press enter to continue...")
-    
-        tau_scaling = 1.0
-
-        n = int(tf / dt)
-
-        meas_time_vec = np.zeros(n)
-        meas_pos = np.zeros(n)
-        meas_vel = np.zeros(n)
-        meas_tau = np.zeros(n)
-        des_tau = np.zeros(n)
-
-        # defining runtime variables
-        i = 0
-        meas_dt = 0.0
-        meas_time = 0.0
-
-        print("Control Loop Started!")
-        # Auto update loop is running in the background updating data in candle.md80s vector. Each md80 object can be 
-        # Called for data at any time
-        while i < n:
-            start_loop = time.time()
-            meas_time += meas_dt
-            
-            ## Do your stuff here - START
-            
-            measured_position = self.candle.md80s[md80num].getPosition()
-            measured_velocity = self.candle.md80s[md80num].getVelocity()  
-            measured_torque = self.candle.md80s[md80num].getTorque()             
-            self.x = np.array([measured_position, measured_velocity])
-            
-            # Control logic
-            if controller is not None:
-                tau = controller.get_control_output(self.x)
-                tau_scaled = tau*tau_scaling    # physical torque to motor torque
-                self.candle.md80s[md80num].setTargetTorque(tau_scaled)
-            else:
-                tau = 0                
-                       
-            # Collect data for plotting
-            meas_time_vec[i] = meas_time
-            meas_pos[i] = measured_position
-            meas_vel[i] = measured_velocity    
-            meas_tau[i] = self.candle.md80s[md80num].getTorque()/tau_scaling
-            des_tau[i] = tau 
-                
-            ## Do your stuff here - END
-            
-            i += 1
-            exec_time = time.time() - start_loop
-            if exec_time > dt:
-                print("Control loop is too slow!")
-                print("Control frequency:", 1/exec_time, "Hz")
-                print("Desired frequency:", 1/dt, "Hz")
-                print()
-            while time.time() - start_loop < dt:
-                pass
-            meas_dt = time.time() - start_loop
-        print("Control Loop Ended!")
-
-        # Send a few zeros to the motor and then close the update loop
-        for i in range(5):
-            self.candle.md80s[md80num].setTargetTorque(0.0)
-        self.candle.end()
-        
-        self.t_values = meas_time_vec
-        self.x_values = np.vstack((meas_pos, meas_vel)).T
-        self.tau_values = meas_tau
-        self.des_tau_values = des_tau
-        
-        return self.t_values, self.x_values, self.tau_values, self.des_tau_values
-
+        time.sleep(time_to_pass * 0.7) # sleep
+        while time.time() - start_loop < dt: # busy waiting
+            pass
 
 def plot_timeseries(T, X, U):
     plt.plot(T, np.asarray(X).T[0], label="theta")
@@ -538,4 +310,3 @@ def plot_timeseries(T, X, U):
     plt.plot(T, U, label="u")
     plt.legend(loc="best")
     plt.show()
-
