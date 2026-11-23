@@ -1,0 +1,3 @@
+[submodule "05_Swingup_Control/02_Winning_Team_IJCAI_2026_AI_Olympics"]
+	path = 05_Swingup_Control/02_Winning_Team_IJCAI_2026_AI_Olympics
+	url = git@github.com:upatras-lar/2026_eurobin_cloudpendulum.git
